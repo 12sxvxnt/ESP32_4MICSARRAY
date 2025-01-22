@@ -12,11 +12,9 @@ SAMPLES_PER_FRAME = 1024   # Must match the ESP32 buffer size per frame
 NUM_CHANNELS = 4           # 4 microphones
 BYTES_PER_SAMPLE = 2       # int16 = 2 bytes
 
-# Root directory where we want to store raw data
-# Each session subfolder will be placed here (Session_01, Session_02, etc.)
+
 ROOT_PATH = r"C:\Users\vlady\PycharmProjects\micarrayESP32\RAW2"
 
-# A global event to signal that we should stop recording
 stop_event = threading.Event()
 
 def input_thread():
@@ -119,17 +117,14 @@ def main():
             for ch_index, channel_data in enumerate(frame):
                 mic_files[ch_index].write(channel_data.tobytes())
 
-            # Update the live plots
             for ch_index, channel_data in enumerate(frame):
                 lines[ch_index].set_ydata(channel_data)
 
-            # Brief pause to let matplotlib update
             plt.pause(0.001)
 
     except KeyboardInterrupt:
         print("Stopping due to Ctrl+C.")
     finally:
-        # Close all files and the serial port
         for f in mic_files:
             f.close()
         ser.close()
