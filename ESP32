@@ -1,0 +1,101 @@
+#include <driver/i2s.h>
+
+// ------------------------ Master I2S Pins (I2S_NUM_0) ------------------------
+#define I2S_BCK_MASTER      26  // BCLK output (Master)
+#define I2S_WS_MASTER       25  // LRCLK
+#define I2S_DATA_IN_MASTER  33  // DIN for the first pair of microphones
+
+// ------------------------ Slave I2S Pins (I2S_NUM_1) -------------------------
+#define I2S_BCK_SLAVE       27  // BCLK input
+#define I2S_WS_SLAVE        14  // LRCLK input
+#define I2S_DATA_IN_SLAVE   32  // DIN for the second pair of microphones
+
+// ------------------ Constants -------------------------
+#define SAMPLES_PER_FRAME   1024
+#define NUM_CHANNELS        4
+#define FRAME_SIZE          (SAMPLES_PER_FRAME * NUM_CHANNELS * sizeof(int16_t))
+
+// ------------------ I2S Configuration for Master -------------------------
+static const i2s_config_t i2s_config_master = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),  // Master + RX
+    .sample_rate = 8000,                                  
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = I2S_COMM_FORMAT_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 8,
+    .dma_buf_len = 1024,
+    .use_apll = false,
+    .tx_desc_auto_clear = false,
+    .fixed_mclk = 0
+};
+
+static const i2s_pin_config_t i2s_pin_master = {
+    .bck_io_num = I2S_BCK_MASTER,
+    .ws_io_num = I2S_WS_MASTER,
+    .data_out_num = I2S_PIN_NO_CHANGE,
+    .data_in_num = I2S_DATA_IN_MASTER
+};
+
+// ------------------ I2S Configuration for Slave --------------------------
+static const i2s_config_t i2s_config_slave = {
+    .mode = (i2s_mode_t)(I2S_MODE_SLAVE | I2S_MODE_RX),   // Slave + RX
+    .sample_rate = 8000,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = I2S_COMM_FORMAT_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 8,
+    .dma_buf_len = 1024,
+    .use_apll = false,
+    .tx_desc_auto_clear = false,
+    .fixed_mclk = 0
+};
+
+static const i2s_pin_config_t i2s_pin_slave = {
+    .bck_io_num = I2S_BCK_SLAVE,
+    .ws_io_num = I2S_WS_SLAVE,
+    .data_out_num = I2S_PIN_NO_CHANGE,
+    .data_in_num = I2S_DATA_IN_SLAVE
+};
+
+// -------------------------------------------------------------------------
+void setup() {
+    Serial.begin(2000000);
+
+    // Install and configure I2S Master
+    i2s_driver_install(I2S_NUM_0, &i2s_config_master, 0, NULL);
+    i2s_set_pin(I2S_NUM_0, &i2s_pin_master);
+
+    // Install and configure I2S Slave
+    i2s_driver_install(I2S_NUM_1, &i2s_config_slave, 0, NULL);
+    i2s_set_pin(I2S_NUM_1, &i2s_pin_slave);
+
+    Serial.println("Streaming audio from 4 microphones...");
+}
+
+void loop() {
+    // Buffers for master and slave channels
+    static int16_t i2s_master_data[SAMPLES_PER_FRAME];
+    static int16_t i2s_slave_data[SAMPLES_PER_FRAME];
+    size_t bytes_read_master = 0;
+    size_t bytes_read_slave = 0;
+
+    // Read data from Master and Slave I2S
+    i2s_read(I2S_NUM_0, (char*)i2s_master_data, sizeof(i2s_master_data), &bytes_read_master, portMAX_DELAY);
+    i2s_read(I2S_NUM_1, (char*)i2s_slave_data, sizeof(i2s_slave_data), &bytes_read_slave, portMAX_DELAY);
+
+    // Ensure both buffers have full data
+    if (bytes_read_master != sizeof(i2s_master_data) || bytes_read_slave != sizeof(i2s_slave_data)) {
+        Serial.println("Incomplete data read, skipping frame.");
+        return;
+    }
+
+    // Interleave and send data as a single frame
+    for (size_t i = 0; i < SAMPLES_PER_FRAME; i += 2) {
+        Serial.write((uint8_t*)&i2s_master_data[i], 2);      // Mic1 (Master Left)
+        Serial.write((uint8_t*)&i2s_master_data[i + 1], 2);  // Mic2 (Master Right)
+        Serial.write((uint8_t*)&i2s_slave_data[i], 2);       // Mic3 (Slave Left)
+        Serial.write((uint8_t*)&i2s_slave_data[i + 1], 2);   // Mic4 (Slave Right)
+    }
+}
